@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team Katy — Dashboard S1 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  /* ── RESET & BASE ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --pink:    #b5507a;
+    --pink-l:  #d4789c;
+    --pink-d:  #8a3359;
+    --bg:      #0f0b10;
+    --bg2:     #1a1420;
+    --bg3:     #231829;
+    --card:    #1e1528;
+    --border:  rgba(181,80,122,0.18);
+    --text:    #f0e8f0;
+    --muted:   #8a7a8a;
+    --green:   #4ecb8d;
+    --orange:  #f0a04a;
+    --red:     #e05555;
+  }
+
+  html { font-size: 16px; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── GRAIN OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 1000; opacity: .5;
+  }
+
+  /* ── HEADER ── */
+  header {
+    padding: 2.5rem 3rem 1.5rem;
+    display: flex; align-items: flex-end; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  header::after {
+    content: '';
+    position: absolute; bottom: -1px; left: 3rem;
+    width: 80px; height: 2px; background: var(--pink);
+  }
+  .header-title { line-height: 1; }
+  .header-eyebrow {
+    font-size: .7rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--pink-l); margin-bottom: .4rem;
+  }
+  h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(2.5rem, 5vw, 4rem);
+    letter-spacing: .05em; color: var(--text);
+    line-height: 1;
+  }
+  h1 span { color: var(--pink); }
+
+  .sync-badge {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .75rem; color: var(--muted);
+    background: var(--bg3); border: 1px solid var(--border);
+    padding: .4rem .9rem; border-radius: 99px;
+  }
+  .sync-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .sync-dot.loading { background: var(--orange); animation: none; }
+  .sync-dot.error   { background: var(--red);    animation: none; }
+  @keyframes pulse {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: .4; transform: scale(.7); }
+  }
+
+  /* ── LAYOUT ── */
+  main { padding: 2rem 3rem 4rem; }
+
+  .section-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.1rem; letter-spacing: .15em;
+    color: var(--pink-l); text-transform: uppercase;
+    margin-bottom: 1.2rem; margin-top: 2.5rem;
+    display: flex; align-items: center; gap: .8rem;
+  }
+  .section-title::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+
+  /* ── MOIS SELECTOR ── */
+  .mois-bar {
+    display: flex; gap: .5rem; flex-wrap: wrap;
+    margin-bottom: 2rem;
+  }
+  .mois-btn {
+    background: var(--bg3); border: 1px solid var(--border);
+    color: var(--muted); font-family: 'DM Sans', sans-serif;
+    font-size: .8rem; font-weight: 500; letter-spacing: .05em;
+    padding: .45rem 1.1rem; border-radius: 99px; cursor: pointer;
+    transition: all .2s;
+  }
+  .mois-btn:hover { border-color: var(--pink-l); color: var(--text); }
+  .mois-btn.active {
+    background: var(--pink); border-color: var(--pink);
+    color: #fff;
+  }
+
+  /* ── KPI CARDS ── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem; margin-bottom: .5rem;
+  }
+  .kpi-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.4rem 1.6rem;
+    position: relative; overflow: hidden;
+    transition: transform .2s, border-color .2s;
+  }
+  .kpi-card:hover { transform: translateY(-2px); border-color: var(--pink-l); }
+  .kpi-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--pink), transparent);
+  }
+  .kpi-label {
+    font-size: .7rem; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: .6rem;
+  }
+  .kpi-value {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.2rem; letter-spacing: .03em; line-height: 1;
+    color: var(--text);
+  }
+  .kpi-sub { font-size: .75rem; color: var(--muted); margin-top: .3rem; }
+  .kpi-pct { font-weight: 600; }
+  .kpi-pct.good   { color: var(--green); }
+  .kpi-pct.medium { color: var(--orange); }
+  .kpi-pct.bad    { color: var(--red); }
+
+  /* ── PROGRESS BAR ── */
+  .progress-wrap { margin-top: .8rem; }
+  .progress-track {
+    height: 4px; background: var(--bg3); border-radius: 99px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--pink-d), var(--pink-l));
+    transition: width .8s cubic-bezier(.4,0,.2,1);
+  }
+
+  /* ── MEMBRE CARDS ── */
+  .membres-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+  .membre-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 1.6rem;
+    transition: transform .2s, border-color .2s;
+  }
+  .membre-card:hover { transform: translateY(-3px); border-color: var(--pink); }
+  .membre-header {
+    display: flex; align-items: center; gap: 1rem; margin-bottom: 1.2rem;
+  }
+  .membre-avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem;
+    color: #fff; flex-shrink: 0;
+  }
+  .membre-name {
+    font-weight: 600; font-size: 1rem; color: var(--text);
+  }
+  .membre-stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: .8rem;
+    margin-bottom: 1rem;
+  }
+  .stat-item { }
+  .stat-label { font-size: .65rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .stat-val { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; color: var(--text); }
+  .stat-val.accent { color: var(--pink-l); }
+
+  /* ── CHART CONTAINER ── */
+  .chart-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 1.8rem;
+    margin-bottom: 1rem;
+  }
+  .chart-title {
+    font-size: .75rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 1.2rem;
+  }
+  .chart-wrap { position: relative; height: 260px; }
+
+  /* ── SKELETON ── */
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg3) 25%, var(--bg2) 50%, var(--bg3) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+    border-radius: 8px;
+  }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+  /* ── ERROR ── */
+  .error-box {
+    background: rgba(224,85,85,.08); border: 1px solid rgba(224,85,85,.3);
+    border-radius: 12px; padding: 1.5rem; color: var(--red);
+    font-size: .9rem; display: none;
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 768px) {
+    header { padding: 1.5rem; flex-direction: column; align-items: flex-start; gap: 1rem; }
+    main   { padding: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-title">
+    <div class="header-eyebrow">S1 2026 · Best MRR</div>
+    <h1>Team <span>Katy</span></h1>
+  </div>
+  <div class="sync-badge">
+    <div class="sync-dot loading" id="syncDot"></div>
+    <span id="syncLabel">Chargement...</span>
+  </div>
+</header>
+
+<main>
+  <div class="error-box" id="errorBox">
+    ⚠️ Impossible de contacter l'API. Vérifie que le backend est bien démarré sur Render.
+  </div>
+
+  <!-- MOIS SELECTOR -->
+  <div class="mois-bar" id="moisBar"></div>
+
+  <!-- KPI EQUIPE -->
+  <div class="section-title">Équipe · Mois sélectionné</div>
+  <div class="kpi-grid" id="kpiGrid">
+    <div class="kpi-card"><div class="skeleton" style="height:70px"></div></div>
+    <div class="kpi-card"><div class="skeleton" style="height:70px"></div></div>
+    <div class="kpi-card"><div class="skeleton" style="height:70px"></div></div>
+  </div>
+
+  <!-- CLASSEMENT -->
+  <div class="section-title">Classement individuel</div>
+  <div class="membres-grid" id="membresGrid">
+    <div class="membre-card"><div class="skeleton" style="height:140px"></div></div>
+    <div class="membre-card"><div class="skeleton" style="height:140px"></div></div>
+    <div class="membre-card"><div class="skeleton" style="height:140px"></div></div>
+  </div>
+
+  <!-- GRAPHIQUES -->
+  <div class="section-title">Évolution S1 · Équipe</div>
+  <div class="chart-card">
+    <div class="chart-title">Goals vs Réalisé (€)</div>
+    <div class="chart-wrap"><canvas id="chartEquipe"></canvas></div>
+  </div>
+
+  <div class="section-title">Évolution S1 · Individuel</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem">
+    <div class="chart-card">
+      <div class="chart-title">Katy</div>
+      <div class="chart-wrap"><canvas id="chartKaty"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Nesrine</div>
+      <div class="chart-wrap"><canvas id="chartNesrine"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Julien</div>
+      <div class="chart-wrap"><canvas id="chartJulien"></canvas></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ⚠️ Remplace cette URL par l'URL de ton backend Render après déploiement
+const API_URL = "https://TON-BACKEND.onrender.com/api/data";
+
+const COULEURS = {
+  Katy:    { bg: "#b5507a", light: "rgba(181,80,122,.15)" },
+  Nesrine: { bg: "#7a6bb5", light: "rgba(122,107,181,.15)" },
+  Julien:  { bg: "#4e9cb5", light: "rgba(78,156,181,.15)" }
+};
+
+const MOIS = ["Janvier","Février","Mars","Avril","Mai","Juin"];
+let allData = null;
+let selectedMois = null;
+let charts = {};
+
+// ── FETCH DATA ──
+async function fetchData() {
+  try {
+    const res = await fetch(API_URL);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error);
+    return json.data;
+  } catch(e) {
+    throw e;
+  }
+}
+
+// ── INIT ──
+async function init() {
+  setSyncState("loading");
+  try {
+    allData = await fetchData();
+    // Sélectionne le dernier mois avec des données
+    selectedMois = getLastActiveMois(allData);
+    buildMoisBar();
+    renderAll();
+    setSyncState("ok");
+    // Rafraîchit toutes les 60 secondes
+    setInterval(async () => {
+      try {
+        allData = await fetchData();
+        renderAll();
+        setSyncState("ok");
+      } catch(e) { setSyncState("error"); }
+    }, 60000);
+  } catch(e) {
+    setSyncState("error");
+    document.getElementById("errorBox").style.display = "block";
+    console.error(e);
+  }
+}
+
+function getLastActiveMois(data) {
+  for (let i = MOIS.length - 1; i >= 0; i--) {
+    if (data.equipe.realise[MOIS[i]] > 0) return MOIS[i];
+  }
+  return MOIS[0];
+}
+
+function setSyncState(state) {
+  const dot = document.getElementById("syncDot");
+  const lbl = document.getElementById("syncLabel");
+  dot.className = "sync-dot " + (state === "loading" ? "loading" : state === "error" ? "error" : "");
+  if (state === "ok") {
+    const now = new Date();
+    lbl.textContent = "Sync " + now.toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"});
+  } else if (state === "loading") {
+    lbl.textContent = "Chargement...";
+  } else {
+    lbl.textContent = "Erreur de connexion";
+  }
+}
+
+// ── MOIS BAR ──
+function buildMoisBar() {
+  const bar = document.getElementById("moisBar");
+  bar.innerHTML = MOIS.map(m => `
+    <button class="mois-btn ${m === selectedMois ? 'active' : ''}" onclick="selectMois('${m}')">${m}</button>
+  `).join("");
+}
+
+function selectMois(mois) {
+  selectedMois = mois;
+  buildMoisBar();
+  renderKPI();
+  renderMembres();
+}
+
+// ── RENDER ALL ──
+function renderAll() {
+  renderKPI();
+  renderMembres();
+  renderChartEquipe();
+  renderChartMembre("Katy", "chartKaty");
+  renderChartMembre("Nesrine", "chartNesrine");
+  renderChartMembre("Julien", "chartJulien");
+}
+
+// ── KPI ÉQUIPE ──
+function renderKPI() {
+  const eq = allData.equipe;
+  const m = selectedMois;
+  const goals   = eq.goals[m]   || 0;
+  const realise = eq.realise[m] || 0;
+  const pct     = goals > 0 ? (realise / goals * 100) : 0;
+  const pctClass = pct >= 85 ? "good" : pct >= 65 ? "medium" : "bad";
+
+  document.getElementById("kpiGrid").innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-label">Objectif équipe</div>
+      <div class="kpi-value">${fmt(goals)}</div>
+      <div class="kpi-sub">${m} 2026</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Best MRR réalisé</div>
+      <div class="kpi-value">${fmt(realise)}</div>
+      <div class="kpi-sub progress-wrap">
+        <div class="progress-track"><div class="progress-fill" style="width:${Math.min(pct,100)}%"></div></div>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Atteinte</div>
+      <div class="kpi-value kpi-pct ${pctClass}">${pct.toFixed(0)}%</div>
+      <div class="kpi-sub">${pct >= 85 ? '✅ Objectif atteint' : pct >= 65 ? '⚡ En cours' : '⚠️ À rattraper'}</div>
+    </div>
+  `;
+}
+
+// ── MEMBRES ──
+function renderMembres() {
+  const m = selectedMois;
+  const membres = ["Katy","Nesrine","Julien"];
+
+  // Calcule le score pour classement
+  const scores = membres.map(nom => {
+    const mb = allData.membres[nom];
+    const realise = mb.realise[m] || 0;
+    const goals   = mb.goals[m]   || 0;
+    const pct     = mb.pct[m]     || (goals > 0 ? realise/goals*100 : 0);
+    return { nom, realise, goals, pct };
+  }).sort((a,b) => b.realise - a.realise);
+
+  const medals = ["🥇","🥈","🥉"];
+
+  document.getElementById("membresGrid").innerHTML = scores.map((s, i) => {
+    const c = COULEURS[s.nom];
+    const pctClass = s.pct >= 85 ? "good" : s.pct >= 65 ? "medium" : "bad";
+    return `
+      <div class="membre-card">
+        <div class="membre-header">
+          <div class="membre-avatar" style="background:${c.bg}">${s.nom[0]}</div>
+          <div>
+            <div class="membre-name">${medals[i]} ${s.nom}</div>
+            <div style="font-size:.7rem;color:var(--muted)">${m} 2026</div>
+          </div>
+        </div>
+        <div class="membre-stats">
+          <div class="stat-item">
+            <div class="stat-label">Réalisé</div>
+            <div class="stat-val accent">${fmt(s.realise)}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-label">Objectif</div>
+            <div class="stat-val">${fmt(s.goals)}</div>
+          </div>
+        </div>
+        <div class="kpi-sub kpi-pct ${pctClass}" style="font-size:.85rem;font-weight:600;margin-bottom:.5rem">${s.pct.toFixed(1)}% d'atteinte</div>
+        <div class="progress-track"><div class="progress-fill" style="width:${Math.min(s.pct,100)}%;background:linear-gradient(90deg,${c.bg},${c.light.replace('.15','1')})"></div></div>
+      </div>
+    `;
+  }).join("");
+}
+
+// ── CHART ÉQUIPE ──
+function renderChartEquipe() {
+  if (charts.equipe) charts.equipe.destroy();
+  const ctx = document.getElementById("chartEquipe").getContext("2d");
+  charts.equipe = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: MOIS.map(m => m.slice(0,3)),
+      datasets: [
+        {
+          label: "Objectif",
+          data: MOIS.map(m => allData.equipe.goals[m] || 0),
+          backgroundColor: "rgba(181,80,122,.15)",
+          borderColor: "rgba(181,80,122,.4)",
+          borderWidth: 1, borderRadius: 4,
+        },
+        {
+          label: "Réalisé",
+          data: MOIS.map(m => allData.equipe.realise[m] || 0),
+          backgroundColor: "rgba(181,80,122,.7)",
+          borderColor: "#b5507a",
+          borderWidth: 1, borderRadius: 4,
+        }
+      ]
+    },
+    options: chartOptions()
+  });
+}
+
+// ── CHART MEMBRE ──
+function renderChartMembre(nom, canvasId) {
+  if (charts[nom]) charts[nom].destroy();
+  const ctx = document.getElementById(canvasId).getContext("2d");
+  const c = COULEURS[nom];
+  const mb = allData.membres[nom];
+  charts[nom] = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: MOIS.map(m => m.slice(0,3)),
+      datasets: [
+        {
+          label: "Objectif",
+          data: MOIS.map(m => mb.goals[m] || 0),
+          borderColor: "rgba(255,255,255,.2)",
+          backgroundColor: "transparent",
+          borderDash: [4,4], pointRadius: 3,
+          tension: .3
+        },
+        {
+          label: "Réalisé",
+          data: MOIS.map(m => mb.realise[m] || 0),
+          borderColor: c.bg,
+          backgroundColor: c.light,
+          fill: true, pointRadius: 4,
+          pointBackgroundColor: c.bg,
+          tension: .3
+        }
+      ]
+    },
+    options: chartOptions(true)
+  });
+}
+
+function chartOptions(small = false) {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: "#8a7a8a", font: { family: "DM Sans", size: 11 }, boxWidth: 12 } },
+      tooltip: {
+        backgroundColor: "#1e1528", borderColor: "rgba(181,80,122,.3)", borderWidth: 1,
+        titleColor: "#f0e8f0", bodyColor: "#8a7a8a",
+        callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString("fr-FR")} €` }
+      }
+    },
+    scales: {
+      x: { ticks: { color: "#8a7a8a", font: { size: 11 } }, grid: { color: "rgba(255,255,255,.04)" } },
+      y: { ticks: { color: "#8a7a8a", font: { size: 11 }, callback: v => v.toLocaleString("fr-FR") + "€" }, grid: { color: "rgba(255,255,255,.04)" } }
+    }
+  };
+}
+
+function fmt(v) {
+  return (v || 0).toLocaleString("fr-FR") + " €";
+}
+
+init();
+</script>
+</body>
+</html>
