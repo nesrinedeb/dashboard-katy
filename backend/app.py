@@ -14,115 +14,132 @@ MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin"]
 def parse_value(val):
     if not val or val.strip() == "":
         return 0
-    val = val.strip()
-    val = val.replace("€", "").replace("%", "").replace("\xa0", "")
-    val = val.replace("\u202f", "").replace(" ", "").replace("\u00a0", "")
-    val = val.replace(",", ".")
-    # Gère les espaces comme séparateurs de milliers (1 055 -> 1055)
-    val = "".join(val.split())
+    v = val.strip()
+    v = v.replace("€", "").replace("%", "")
+    v = v.replace("\xa0", "").replace("\u202f", "").replace("\u00a0", "").replace("\u20ac", "")
+    v = v.replace(" ", "").replace(",", ".")
     try:
-        return float(val)
+        return float(v)
     except:
         return 0
+
+def clean(s):
+    return s.strip().lower() if s else ""
 
 def fetch_csv():
     response = requests.get(GOOGLE_SHEETS_CSV_URL, timeout=15)
     response.encoding = "utf-8"
     reader = csv.reader(io.StringIO(response.text))
-    rows = [row for row in reader]
-    return rows
+    return [row for row in reader]
 
 @app.route("/api/data")
 def get_data():
     try:
         rows = fetch_csv()
 
-        # On cherche les lignes clés par leur contenu
-        data = {
-            "equipe": {
-                "goals":   dict.fromkeys(MOIS, 0),
-                "realise": dict.fromkeys(MOIS, 0),
-                "pct":     dict.fromkeys(MOIS, 0),
-            },
-            "membres": {
-                "Katy":    {"goals": dict.fromkeys(MOIS, 0), "realise": dict.fromkeys(MOIS, 0), "pct": dict.fromkeys(MOIS, 0)},
-                "Nesrine": {"goals": dict.fromkeys(MOIS, 0), "realise": dict.fromkeys(MOIS, 0), "pct": dict.fromkeys(MOIS, 0)},
-                "Julien":  {"goals": dict.fromkeys(MOIS, 0), "realise": dict.fromkeys(MOIS, 0), "pct": dict.fromkeys(MOIS, 0)},
-            },
-            "raw_rows": []  # debug temporaire
-        }
-
-        # Trouve l'index des colonnes mois (ligne header)
-        header_row_idx = None
+        # Trouve la ligne header avec les mois
         mois_cols = {}
-        for i, row in enumerate(rows):
+        for row in rows:
             for j, cell in enumerate(row):
-                if "Janvier" in cell or "janvier" in cell.lower():
-                    header_row_idx = i
-                    # Trouve les positions des mois
+                if "Janvier" in cell:
                     for k, c in enumerate(row):
-                        c_clean = c.strip()
-                        if c_clean in MOIS:
-                            mois_cols[c_clean] = k
+                        c2 = c.strip()
+                        if c2 in MOIS:
+                            mois_cols[c2] = k
                     break
-            if header_row_idx is not None:
+            if mois_cols:
                 break
 
-        # Ajoute les données brutes pour debug
-        data["raw_rows"] = [row[:10] for row in rows[:50]]
-        data["header_row"] = header_row_idx
-        data["mois_cols"] = mois_cols
+        def get_vals(row):
+            return {m: parse_value(row[idx]) if idx < len(row) else 0 for m, idx in mois_cols.items()}
 
-        def extract_mois_values(row, cols):
-            result = {}
-            for mois, idx in cols.items():
-                result[mois] = parse_value(row[idx]) if idx < len(row) else 0
-            return result
+        data = {
+            "equipe": {"goals": {}, "realise": {}, "pct": {}},
+            "membres": {
+                "Katy":    {"goals": {}, "realise": {}, "pct": {}},
+                "Nesrine": {"goals": {}, "realise": {}, "pct": {}},
+                "Julien":  {"goals": {}, "realise": {}, "pct": {}},
+            }
+        }
 
-        # Parcourt toutes les lignes pour trouver les données
-        current_member = None
         for i, row in enumerate(rows):
-            if not row or len(row) < 3:
+            if len(row) < 3:
                 continue
 
-            # Cherche le nom dans les premières colonnes
-            row_text = " ".join(row[:4]).lower()
+            c0 = clean(row[0])
+            c1 = clean(row[1]) if len(row) > 1 else ""
+            c2 = clean(row[2]) if len(row) > 2 else ""
 
-            # Détection membre courant
-            for nom in ["Katy", "Nesrine", "Julien"]:
-                if nom.lower() in row[:3][0].lower() if row[0] else False:
-                    current_member = nom
-                elif nom.lower() in row[:3][1].lower() if len(row) > 1 and row[1] else False:
-                    current_member = nom
-
-            # Equipe - Total Best MRR
-            if "total best mrr" in row_text and mois_cols:
-                next_rows = rows[i:i+4]
-                for nr in next_rows:
-                    if not nr or len(nr) < 3:
+            # ── ÉQUIPE ──
+            # Ligne: ["", "Total Best MRR", "Team", "Goals", ...]
+            if "total best mrr" in c1 or "total best mrr" in c2:
+                if "goals" in c2 or "budget" in c2:
+                    data["equipe"]["goals"] = get_vals(row)
+                elif "réalis" in c2 or "realise" in c2:
+                    data["equipe"]["realise"] = get_vals(row)
+                elif "%" in c2 or "atteinte" in c2:
+                    data["equipe"]["pct"] = get_vals(row)
+                # Cherche aussi les lignes suivantes
+                for nr in rows[i+1:i+4]:
+                    if len(nr) < 3:
                         continue
-                    nr_text = " ".join(nr[:3]).lower()
-                    if "réalis" in nr_text or "realise" in nr_text or "r\u00e9alis" in nr_text:
-                        data["equipe"]["realise"] = extract_mois_values(nr, mois_cols)
-                    elif "budget" in nr_text or "goals" in nr_text:
-                        data["equipe"]["goals"] = extract_mois_values(nr, mois_cols)
-                    elif "atteinte" in nr_text or "%" in nr_text:
-                        data["equipe"]["pct"] = extract_mois_values(nr, mois_cols)
+                    nc2 = clean(nr[2]) if len(nr) > 2 else ""
+                    nc1 = clean(nr[1]) if len(nr) > 1 else ""
+                    if "goals" in nc2 or "budget" in nc2:
+                        data["equipe"]["goals"] = get_vals(nr)
+                    elif "réalis" in nc2 or "realise" in nc2 or "réalis" in nc1:
+                        data["equipe"]["realise"] = get_vals(nr)
+                    elif ("%" in nc2 or "atteinte" in nc2) and any(parse_value(nr[mois_cols[m]]) > 0 for m in MOIS if m in mois_cols and mois_cols[m] < len(nr)):
+                        data["equipe"]["pct"] = get_vals(nr)
 
-            # Membres individuels - cherche par nom
+            # ── MEMBRES ──
             for nom in ["Katy", "Nesrine", "Julien"]:
-                if nom.lower() in row_text and mois_cols:
-                    # Cherche dans les lignes suivantes
-                    for nr in rows[i:i+5]:
-                        if not nr or len(nr) < 3:
+                n = nom.lower()
+                # Ligne type: ["", "", "Nesrine", "Goals", val, val, ...]
+                # ou: ["", "", "Katy", "Réalisé", val, val, ...]
+                if n in c1 or n in c2:
+                    col_type = c2 if n in c1 else clean(row[3]) if len(row) > 3 else ""
+                    vals = get_vals(row)
+                    if "goals" in col_type or "budget" in col_type:
+                        data["membres"][nom]["goals"] = vals
+                    elif "réalis" in col_type or "realise" in col_type:
+                        data["membres"][nom]["realise"] = vals
+                    elif "%" in col_type or "atteinte" in col_type:
+                        data["membres"][nom]["pct"] = vals
+                    # Cherche lignes suivantes pour goals/réalisé/% du même membre
+                    for nr in rows[i+1:i+4]:
+                        if len(nr) < 3:
                             continue
-                        nr_text = " ".join(nr[:4]).lower()
-                        if ("réalis" in nr_text or "r\u00e9alis" in nr_text) and nom.lower() in nr_text:
-                            data["membres"][nom]["realise"] = extract_mois_values(nr, mois_cols)
-                        elif "budget" in nr_text and nom.lower() in nr_text:
-                            data["membres"][nom]["goals"] = extract_mois_values(nr, mois_cols)
-                        elif "atteinte" in nr_text and nom.lower() in nr_text:
-                            data["membres"][nom]["pct"] = extract_mois_values(nr, mois_cols)
+                        nc1 = clean(nr[1]) if len(nr) > 1 else ""
+                        nc2 = clean(nr[2]) if len(nr) > 2 else ""
+                        nc3 = clean(nr[3]) if len(nr) > 3 else ""
+                        # Stop si on change de membre
+                        if any(other.lower() in nc1 or other.lower() in nc2 for other in ["Katy","Nesrine","Julien"] if other != nom):
+                            break
+                        if "goals" in nc2 or "budget" in nc2 or "goals" in nc3 or "budget" in nc3:
+                            data["membres"][nom]["goals"] = get_vals(nr)
+                        elif "réalis" in nc2 or "realise" in nc2 or "réalis" in nc3:
+                            data["membres"][nom]["realise"] = get_vals(nr)
+                        elif "%" in nc2 or "atteinte" in nc2 or "%" in nc3:
+                            data["membres"][nom]["pct"] = get_vals(nr)
+
+        # Calcule les % manquants
+        for nom in ["Katy", "Nesrine", "Julien"]:
+            if not data["membres"][nom]["pct"]:
+                pct = {}
+                for m in MOIS:
+                    g = data["membres"][nom]["goals"].get(m, 0)
+                    r = data["membres"][nom]["realise"].get(m, 0)
+                    pct[m] = round(r / g * 100, 2) if g > 0 else 0
+                data["membres"][nom]["pct"] = pct
+
+        if not data["equipe"]["pct"]:
+            pct = {}
+            for m in MOIS:
+                g = data["equipe"]["goals"].get(m, 0)
+                r = data["equipe"]["realise"].get(m, 0)
+                pct[m] = round(r / g * 100, 2) if g > 0 else 0
+            data["equipe"]["pct"] = pct
 
         return jsonify({"success": True, "data": data, "mois": MOIS})
 
@@ -132,10 +149,9 @@ def get_data():
 
 @app.route("/api/raw")
 def get_raw():
-    """Route de debug pour voir le CSV brut"""
     try:
         rows = fetch_csv()
-        return jsonify({"rows": [row for row in rows[:60]]})
+        return jsonify({"rows": rows[:60]})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
