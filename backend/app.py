@@ -9,7 +9,7 @@ CORS(app, origins=["*"])
 
 GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRjwPUN21RUS6QX3hVUd7rP7t0MZ52hOVyMZNmRHdrR75gBD8FOtLnCcYwbS9GtvcDusIpliN0W-gzI/pub?output=csv&gid=792570627"
 MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin"]
-VERSION = "v7"
+VERSION = "v8"
 
 def parse_value(val):
     if not val or not val.strip() or val.strip() == "#REF!":
@@ -33,7 +33,7 @@ def get_data():
     try:
         rows = fetch_csv()
 
-        # Trouve colonnes des mois
+        # 1. Trouve colonnes des mois
         mois_cols = {}
         for row in rows:
             for j, cell in enumerate(row):
@@ -60,8 +60,6 @@ def get_data():
             }
         }
 
-        equipe_idx = None
-
         for i, row in enumerate(rows):
             if len(row) < 4:
                 continue
@@ -69,18 +67,23 @@ def get_data():
             c2 = row[2].strip()
             c3 = row[3].strip()
 
-            # ÉQUIPE
+            # ÉQUIPE : première occurrence avec valeurs réelles (pas #REF!)
             if c1 == "Total Best MRR" and c2 == "Team" and c3 == "Goals":
                 v = vals(row)
                 if any(x > 0 for x in v.values()):
-                    equipe_idx = i
                     data["equipe"]["goals"] = v
                     if i+1 < len(rows): data["equipe"]["realise"] = vals(rows[i+1])
                     if i+2 < len(rows): data["equipe"]["pct"] = vals(rows[i+2])
 
-            # KATY réalisé
+            # KATY GOALS (ligne ajoutée manuellement)
+            if c2 == "Katy" and "Goals" in c3:
+                data["membres"]["Katy"]["goals"] = vals(row)
+
+            # KATY RÉALISÉ
             if c2 == "Katy" and "Réalis" in c3:
                 data["membres"]["Katy"]["realise"] = vals(row)
+                if i+1 < len(rows) and rows[i+1][3].strip() == "%":
+                    data["membres"]["Katy"]["pct"] = vals(rows[i+1])
 
             # NESRINE
             if c2 == "Nesrine" and "Goals" in c3:
@@ -93,10 +96,6 @@ def get_data():
                 data["membres"]["Julien"]["goals"] = vals(row)
                 if i+1 < len(rows): data["membres"]["Julien"]["realise"] = vals(rows[i+1])
                 if i+2 < len(rows): data["membres"]["Julien"]["pct"] = vals(rows[i+2])
-
-        # Katy goals = goals équipe si pas trouvé séparément
-        if all(v == 0 for v in data["membres"]["Katy"]["goals"].values()):
-            data["membres"]["Katy"]["goals"] = data["equipe"]["goals"].copy()
 
         # Calcule % manquants
         for nom in ["Katy", "Nesrine", "Julien"]:
