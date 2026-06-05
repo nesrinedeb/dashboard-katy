@@ -5,7 +5,7 @@ import csv
 import io
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["https://dashboard-katy-1.onrender.com"])
 
 GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRjwPUN21RUS6QX3hVUd7rP7t0MZ52hOVyMZNmRHdrR75gBD8FOtLnCcYwbS9GtvcDusIpliN0W-gzI/pub?output=csv&gid=792570627"
 MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin"]
