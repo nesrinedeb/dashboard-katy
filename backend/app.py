@@ -14,9 +14,10 @@ def parse_value(val):
     if not val or not val.strip():
         return 0
     v = val.strip()
+    if v == "#REF!":
+        return 0
     for ch in ["€", "%", "\xa0", "\u202f", "\u00a0", "\u20ac"]:
         v = v.replace(ch, "")
-    # Supprime les espaces (séparateurs de milliers: "1 144" -> "1144")
     v = v.replace(" ", "").replace(",", ".")
     try:
         return float(v)
@@ -36,22 +37,26 @@ def get_data():
     try:
         rows = fetch_csv()
 
-        # 1. Trouve la ligne des mois et leurs indices de colonnes
+        # Trouve la ligne des mois (contient "Janvier")
+        mois_row_idx = None
         mois_cols = {}
-        for row in rows:
+        for i, row in enumerate(rows):
             for j, cell in enumerate(row):
                 if cell.strip() == "Janvier":
+                    mois_row_idx = i
                     for k, cc in enumerate(row):
-                        cc_clean = cc.strip()
-                        if cc_clean in MOIS:
-                            mois_cols[cc_clean] = k
+                        if cc.strip() in MOIS:
+                            mois_cols[cc.strip()] = k
                     break
-            if mois_cols:
+            if mois_row_idx is not None:
                 break
 
         def vals(row):
             return {m: parse_value(row[idx]) if idx < len(row) else 0
                     for m, idx in mois_cols.items()}
+
+        def zero():
+            return {m: 0 for m in MOIS}
 
         data = {
             "equipe":  {"goals": zero(), "realise": zero(), "pct": zero()},
@@ -62,74 +67,56 @@ def get_data():
             }
         }
 
-        # 2. Parcours toutes les lignes
+        # Cherche le bloc principal "Total Best MRR / Team"
+        # C'est le PREMIER bloc (pas les #REF! du second)
+        first_block_found = False
+
         for i, row in enumerate(rows):
-            if not row:
+            cells = [c.strip() for c in row]
+            if len(cells) < 4:
                 continue
 
-            # Nettoie chaque cellule pour comparaison
-            cells = [c.strip() for c in row]
+            # ── ÉQUIPE : premier "Total Best MRR" avec "Team" ──
+            if not first_block_found and "Total Best MRR" in cells and "Team" in cells and "Goals" in cells:
+                first_block_found = True
+                # Ligne courante = Goals
+                data["equipe"]["goals"] = vals(row)
+                # Ligne i+1 = Réalisé
+                if i+1 < len(rows):
+                    data["equipe"]["realise"] = vals(rows[i+1])
+                # Ligne i+2 = %
+                if i+2 < len(rows):
+                    data["equipe"]["pct"] = vals(rows[i+2])
 
-            # ── ÉQUIPE ──
-            # Ligne: ["", "Total Best MRR", "Team", "Goals", v1, v2...]
-            if len(cells) > 3 and "Total Best MRR" in cells and "Team" in cells:
-                idx = cells.index("Team")
-                type_cell = cells[idx + 1] if idx + 1 < len(cells) else ""
-                if "Goals" in type_cell or "Budget" in type_cell:
-                    data["equipe"]["goals"] = vals(row)
-                elif "Réalis" in type_cell:
-                    data["equipe"]["realise"] = vals(row)
-                elif "%" in type_cell or "Atteinte" in type_cell:
-                    data["equipe"]["pct"] = vals(row)
+            # ── MEMBRES : cherche par nom en colonne 2 (index 2) ──
+            if len(cells) > 3:
+                nom_cell = cells[2]
+                type_cell = cells[3]
 
-            # Ligne suite équipe (Réalisé et % sont sur lignes séparées sans "Total Best MRR")
-            # Format: ["", "", "", "Réalisé ", v1, v2...] ou ["", "", "", "%", v1, v2...]
-            if len(cells) > 3 and cells[0] == "" and cells[1] == "" and cells[2] == "":
-                type_cell = cells[3] if len(cells) > 3 else ""
-                # Vérifie que c'est bien une ligne de données équipe (ligne juste après Total Best MRR)
-                # en regardant si les valeurs correspondent à des montants d'équipe
-                if "Réalis" in type_cell:
-                    v = vals(row)
-                    # Prend les valeurs les plus grandes comme étant l'équipe
-                    if any(val > 500 for val in v.values()):
-                        data["equipe"]["realise"] = v
-                elif type_cell == "%" or "Atteinte" in type_cell:
-                    data["equipe"]["pct"] = vals(row)
-
-            # ── MEMBRES ──
-            for nom in ["Katy", "Nesrine", "Julien"]:
-                # Ligne: ["", "", "Katy", "Réalisé", v1, v2...] 
-                # ou:    ["", "", "Nesrine", "Goals", v1, v2...]
-                if nom in cells:
-                    idx = cells.index(nom)
-                    type_cell = cells[idx + 1] if idx + 1 < len(cells) else ""
+                if nom_cell in ["Katy", "Nesrine", "Julien"]:
+                    nom = nom_cell
                     if "Goals" in type_cell or "Budget" in type_cell:
                         data["membres"][nom]["goals"] = vals(row)
+                        # Ligne suivante = Réalisé
+                        if i+1 < len(rows):
+                            nr = [c.strip() for c in rows[i+1]]
+                            if len(nr) > 3 and "Réalis" in nr[3]:
+                                data["membres"][nom]["realise"] = vals(rows[i+1])
+                        # Ligne i+2 = %
+                        if i+2 < len(rows):
+                            nr2 = [c.strip() for c in rows[i+2]]
+                            if len(nr2) > 3 and "%" in nr2[3]:
+                                data["membres"][nom]["pct"] = vals(rows[i+2])
+
                     elif "Réalis" in type_cell:
                         data["membres"][nom]["realise"] = vals(row)
-                    elif "%" in type_cell or "Atteinte" in type_cell:
-                        data["membres"][nom]["pct"] = vals(row)
-                    # Cherche les lignes suivantes pour goals/réalisé/%
-                    for nr in rows[i+1:i+4]:
-                        if not nr:
-                            continue
-                        nc = [c.strip() for c in nr]
-                        # Stop si on tombe sur un autre membre
-                        if any(other in nc for other in ["Katy","Nesrine","Julien"] if other != nom):
-                            break
-                        # Cherche le type dans les colonnes proches du nom
-                        for k2, cell2 in enumerate(nc):
-                            if "Goals" in cell2 or "Budget" in cell2:
-                                if not data["membres"][nom]["goals"] or all(v == 0 for v in data["membres"][nom]["goals"].values()):
-                                    data["membres"][nom]["goals"] = vals(nr)
-                            elif "Réalis" in cell2:
-                                if not data["membres"][nom]["realise"] or all(v == 0 for v in data["membres"][nom]["realise"].values()):
-                                    data["membres"][nom]["realise"] = vals(nr)
-                            elif cell2 == "%" or "Atteinte" in cell2:
-                                if not data["membres"][nom]["pct"] or all(v == 0 for v in data["membres"][nom]["pct"].values()):
-                                    data["membres"][nom]["pct"] = vals(nr)
+                        # Ligne suivante = %
+                        if i+1 < len(rows):
+                            nr = [c.strip() for c in rows[i+1]]
+                            if len(nr) > 3 and "%" in nr[3]:
+                                data["membres"][nom]["pct"] = vals(rows[i+1])
 
-        # 3. Calcule les % manquants
+        # Calcule les % manquants
         for nom in ["Katy", "Nesrine", "Julien"]:
             if all(v == 0 for v in data["membres"][nom]["pct"].values()):
                 data["membres"][nom]["pct"] = {
