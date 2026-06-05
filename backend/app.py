@@ -60,57 +60,96 @@ def get_data():
             }
         }
 
-        # 2. Trouve la ligne "Total Best MRR / Team / Goals" (première occurrence sans #REF!)
-        for i, row in enumerate(rows):
-            cells = [c.strip() for c in row]
-            if "Total Best MRR" in cells and "Team" in cells and "Goals" in cells:
-                # Vérifie que ce ne sont pas des #REF!
-                if parse_value(row[mois_cols["Janvier"]]) > 0 or parse_value(row[mois_cols["Février"]]) > 0:
-                    data["equipe"]["goals"] = vals(row)
-                    if i+1 < len(rows): data["equipe"]["realise"] = vals(rows[i+1])
-                    if i+2 < len(rows): data["equipe"]["pct"] = vals(rows[i+2])
-                    break
+        # 2. Cherche chaque ligne par son contenu exact
+        # D'après le CSV brut, voici la structure :
+        # Ligne equipe goals:   cells[1]="Total Best MRR", cells[2]="Team", cells[3]="Goals"
+        # Ligne equipe realise: cells[3]="Réalisé " (avec espace), cells[1]="" cells[2]=""
+        # Ligne equipe %:       cells[3]="%"
+        # Ligne Katy realise:   cells[2]="Katy", cells[3]="Réalisé"
+        # Ligne Nesrine goals:  cells[2]="Nesrine", cells[3]="Goals"
+        # Ligne Nesrine realise: cells[2]="", cells[3]="Réalisé" (ligne APRES Nesrine Goals)
+        # Ligne Julien goals:   cells[2]="Julien", cells[3]="Goals"
+        # Ligne Julien realise: cells[2]="", cells[3]="Réalisé" (ligne APRES Julien Goals)
 
-        # 3. Trouve chaque membre par son nom en colonne 2
-        #    puis lit les lignes suivantes jusqu'au prochain membre
-        MEMBRES = ["Katy", "Nesrine", "Julien"]
-        
+        equipe_goals_row = None
+
         for i, row in enumerate(rows):
-            cells = [c.strip() for c in row]
-            if len(cells) < 4:
+            if len(row) < 4:
                 continue
-            
-            nom = cells[2] if len(cells) > 2 else ""
-            type_cel = cells[3] if len(cells) > 3 else ""
-            
-            if nom in MEMBRES:
-                # Ligne courante : peut être Goals ou Réalisé directement
-                if "Réalis" in type_cel:
-                    data["membres"][nom]["realise"] = vals(row)
-                    # Ligne suivante peut être %
-                    if i+1 < len(rows):
-                        nc = [c.strip() for c in rows[i+1]]
-                        if len(nc) > 3 and nc[3] == "%":
-                            data["membres"][nom]["pct"] = vals(rows[i+1])
-                            
-                elif "Goals" in type_cel or "Budget" in type_cel:
-                    data["membres"][nom]["goals"] = vals(row)
-                    # Cherche Réalisé et % dans les lignes suivantes
-                    for j in range(i+1, min(i+4, len(rows))):
-                        nr = rows[j]
-                        nc = [c.strip() for c in nr]
-                        if len(nc) < 4:
-                            continue
-                        # Stop si on trouve un autre membre
-                        if nc[2] in MEMBRES and nc[2] != nom:
-                            break
-                        if "Réalis" in nc[3]:
-                            data["membres"][nom]["realise"] = vals(nr)
-                        elif nc[3] == "%":
-                            data["membres"][nom]["pct"] = vals(nr)
+            c1 = row[1].strip()
+            c2 = row[2].strip()
+            c3 = row[3].strip()
+
+            # ÉQUIPE GOALS : "Total Best MRR" + "Team" + "Goals"
+            if c1 == "Total Best MRR" and c2 == "Team" and c3 == "Goals":
+                # Vérifie que les valeurs ne sont pas #REF!
+                test_val = parse_value(row[mois_cols["Janvier"]]) if "Janvier" in mois_cols else 0
+                test_val2 = parse_value(row[mois_cols["Février"]]) if "Février" in mois_cols else 0
+                if test_val > 0 or test_val2 > 0:
+                    equipe_goals_row = i
+                    data["equipe"]["goals"] = vals(row)
+
+            # ÉQUIPE RÉALISÉ : ligne juste après equipe goals
+            if equipe_goals_row is not None and i == equipe_goals_row + 1:
+                data["equipe"]["realise"] = vals(row)
+
+            # ÉQUIPE % : ligne juste après equipe réalisé
+            if equipe_goals_row is not None and i == equipe_goals_row + 2:
+                data["equipe"]["pct"] = vals(row)
+
+            # KATY RÉALISÉ : cells[2]="Katy", cells[3]="Réalisé"
+            if c2 == "Katy" and "Réalis" in c3:
+                data["membres"]["Katy"]["realise"] = vals(row)
+                # Ligne suivante = %
+                if i+1 < len(rows) and len(rows[i+1]) > 3:
+                    nc3 = rows[i+1][3].strip()
+                    if nc3 == "%":
+                        data["membres"]["Katy"]["pct"] = vals(rows[i+1])
+
+            # NESRINE GOALS : cells[2]="Nesrine", cells[3]="Goals"
+            if c2 == "Nesrine" and ("Goals" in c3 or "Budget" in c3):
+                data["membres"]["Nesrine"]["goals"] = vals(row)
+                # Ligne i+1 = Réalisé
+                if i+1 < len(rows) and len(rows[i+1]) > 3:
+                    if "Réalis" in rows[i+1][3]:
+                        data["membres"]["Nesrine"]["realise"] = vals(rows[i+1])
+                # Ligne i+2 = %
+                if i+2 < len(rows) and len(rows[i+2]) > 3:
+                    if rows[i+2][3].strip() == "%":
+                        data["membres"]["Nesrine"]["pct"] = vals(rows[i+2])
+
+            # JULIEN GOALS : cells[2]="Julien", cells[3]="Goals"
+            if c2 == "Julien" and ("Goals" in c3 or "Budget" in c3):
+                data["membres"]["Julien"]["goals"] = vals(row)
+                # Ligne i+1 = Réalisé
+                if i+1 < len(rows) and len(rows[i+1]) > 3:
+                    if "Réalis" in rows[i+1][3]:
+                        data["membres"]["Julien"]["realise"] = vals(rows[i+1])
+                # Ligne i+2 = %
+                if i+2 < len(rows) and len(rows[i+2]) > 3:
+                    if rows[i+2][3].strip() == "%":
+                        data["membres"]["Julien"]["pct"] = vals(rows[i+2])
+
+            # KATY GOALS : pas de ligne Goals explicite pour Katy
+            # On déduit depuis l'objectif équipe et les autres
+            # Mais on peut chercher une ligne avec goals pour Katy si elle existe
+
+        # 3. Goals Katy = pas dans le CSV directement, on utilise l'objectif individuel
+        # D'après le CSV, Katy n'a pas de ligne Goals propre dans le premier bloc
+        # On va chercher dans le second bloc ou calculer
+        # Pour l'instant, si goals Katy = 0, on met les goals équipe / 3 comme approximation
+        # MAIS d'abord cherchons si une ligne Katy + Goals existe ailleurs
+        for i, row in enumerate(rows):
+            if len(row) < 4:
+                continue
+            c2 = row[2].strip()
+            c3 = row[3].strip()
+            if c2 == "Katy" and ("Goals" in c3 or "Budget" in c3):
+                data["membres"]["Katy"]["goals"] = vals(row)
+                break
 
         # 4. Calcule les % manquants
-        for nom in MEMBRES:
+        for nom in ["Katy", "Nesrine", "Julien"]:
             if all(v == 0 for v in data["membres"][nom]["pct"].values()):
                 data["membres"][nom]["pct"] = {
                     m: round(data["membres"][nom]["realise"].get(m, 0) /
